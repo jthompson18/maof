@@ -1,0 +1,60 @@
+# The partner's signed purchase cycle workflow: submitted,
+# approved + signed once, then executed repeatably. Money flows through here,
+# so the chain is data, not prompts: plan -> reserve (spend-policy-gated, pinned
+# to Commitments v1) -> wait for the ordering window opens -> traffic per region (parallel)
+# -> join -> actualize budgets -> open the invoice.
+name: po-cycle
+version: 1
+description: >
+  Omniregion next-quarter lifecycle across Commitments (planning/buying/billing) and
+  Fulfillment (ordering/shipment/delivery-metrics) under the spend-cap policy.
+steps:
+  - id: plan
+    task_type: purchase_plan
+    input:
+      budget: "{{ context.committed_spend_usd }}"
+      east_name: "{{ context.order_code_east }}"
+      west_name: "{{ context.order_code_west }}"
+
+  - id: reserve
+    task_type: funds_commit
+    depends_on: [plan]
+    pins: {agent_version: v1}  # deterministic affordance: refuse a swapped vendor version
+    input:
+      amount: "{{ context.committed_spend_usd }}"  # already clamped by policy
+      plan_ref: "{{ steps.plan.output.plan_id }}"
+
+  - id: window_open
+    kind: gate
+    depends_on: [reserve]
+    input: {wait: timer, delay_s: 0}  # offline demo: the ordering window openss immediately
+
+  - id: order_east
+    task_type: order_placement
+    depends_on: [window_open]
+    input:
+      region: east
+      order_code: "{{ steps.plan.output.east_name }}"
+      plan_ref: "{{ steps.plan.output.plan_id }}"
+
+  - id: order_west
+    task_type: order_placement
+    depends_on: [window_open]
+    input:
+      region: west
+      order_code: "{{ steps.plan.output.west_name }}"
+      plan_ref: "{{ steps.plan.output.plan_id }}"
+
+  - id: actualize
+    task_type: reconciliation
+    depends_on: [order_east, order_west]  # join: both regions placed
+    input:
+      kind: actualize
+      committed_usd: "{{ steps.reserve.output.amount_usd }}"
+
+  - id: invoice
+    task_type: reconciliation
+    depends_on: [actualize]
+    input:
+      kind: invoice
+      actual_usd: "{{ steps.actualize.output.actual_usd }}"

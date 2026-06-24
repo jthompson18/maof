@@ -1,0 +1,34 @@
+# Worker/queue topology for the reference po_demo.
+# Names/queues/task-types are adopter-defined; MAOF ships none of this.
+# Vendor queues match the registry manifests (registry-driven routing);
+# every worker publishes signed result envelopes to the results queue.
+version: 1
+secrets:
+  hmac_keys:
+    - {key_id: default, value: "${MSG_SIGNING_SECRET}"}
+workers:
+  - name: commitments-1
+    queue: suppliers.commitments.v1
+    concurrency: 2
+    prefetch: 20
+    require_signature: true
+    allowed_task_types: [purchase_plan, funds_commit, reconciliation]
+    tags: {vendor: commitments}
+  - name: fulfillment-1
+    queue: suppliers.fulfillment.v1
+    concurrency: 2
+    prefetch: 20
+    require_signature: true
+    allowed_task_types: [order_placement, shipment_prep, delivery_metrics]
+    tags: {vendor: fulfillment}
+queues:
+  - name: suppliers.commitments.v1
+    dlq: {name: suppliers.commitments.v1.dlq, ttl: 10m, max_len: 20000}
+    retry: {steps: ["5s", "30s", "2m"]}
+  - name: suppliers.fulfillment.v1
+    dlq: {name: suppliers.fulfillment.v1.dlq}
+    retry: {steps: ["10s", "1m"]}
+results:
+  queue: results
+  dlq: {name: results.dlq, ttl: 1h, max_len: 50000}
+  retry: {steps: ["5s", "30s"]}

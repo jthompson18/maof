@@ -1,0 +1,48 @@
+# Spend-cap ruleset (the governance crux of the po_demo).
+#
+# Under the spend-cap policy the partner is liable to a supplier only to the
+# extent it has received cleared funds from the buyer, and must never commit
+# beyond client funding. Encoded as policy-as-code over the DSL + action set,
+# with the reference surfaces: the over-cap approval is TWO-PARTY and role-bound
+# (buyer finance AND partner ops must both sign), and a post_result
+# rule keeps catalog-violating vendor results out of the run entirely.
+ruleset_ref: spend-cap
+version: 4
+rules:
+  # Always assert the disclosed-principal posture on the commitment chain.
+  - rule_id: assert-disclosed-principal
+    stage: action_plan
+    priority: 1
+    when: {op: always}
+    actions:
+      - {type: set_flag, key: disclosed_principal, value: "true"}
+
+  # Never commit the partner beyond cleared client funds: clamp committed spend to
+  # the funds actually received.
+  - rule_id: clamp-to-cleared-funds
+    stage: action_plan
+    priority: 10
+    when: {op: gt, lhs: flags.committed_spend_usd, rhs: flags.funds_received_usd}
+    actions:
+      - {type: clamp, flag: committed_spend_usd, max_flag: funds_received_usd}
+      - {type: add_nudge, text: "committed spend clamped to cleared client funds (the spend-cap policy)"}
+
+  # Over the spend cap: BOTH sides of the shared tenant must sign off.
+  - rule_id: two-party-approval-over-cap
+    stage: action_plan
+    priority: 20
+    when: {op: gt, lhs: flags.committed_spend_usd, rhs: flags.spend_cap_usd}
+    actions:
+      - type: require_approval
+        reason: "commitment exceeds the partner spend cap; buyer finance AND partner ops must sign"
+        roles: [buyer-finance, partner-ops]
+        parties: 2
+
+  # Source-of-truth enforcement: a vendor result whose placement naming failed
+  # catalog validation is denied before it persists (collector quarantines it).
+  - rule_id: deny-nonconformant-placement
+    stage: post_result
+    priority: 5
+    when: {op: eq, lhs: semantic.result.catalog_ok, rhs: false}
+    actions:
+      - {type: deny_plan, reason: "order code violates the naming catalog"}

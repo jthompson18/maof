@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "delivery_metrics.v1",
+  "type": "object",
+  "required": ["task_type", "description", "priority"],
+  "properties": {
+    "task_type": {"const": "delivery_metrics"},
+    "description": {"type": "string", "minLength": 1},
+    "priority": {"type": "integer", "minimum": 1, "maximum": 9}
+  }
+}

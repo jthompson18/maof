@@ -1,0 +1,105 @@
+# MAOF CI: lint, format, strict types, tests (with live
+# Postgres+pgvector), the eval gate on the sample dataset, and a supply-chain
+# job (dependency vulnerability audit + CycloneDX SBOM artifact).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: maof
+          POSTGRES_PASSWORD: maof
+          POSTGRES_DB: maof
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U maof -d maof"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      MAOF_TEST_DATABASE_URL: postgresql://maof:maof@localhost:5432/maof
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: pip install -e ".[dev,postgres]"
+      - name: Lint (ruff)
+        run: ruff check src tests examples
+      - name: Format (black)
+        run: black --check src tests examples
+      - name: Types (mypy --strict)
+        run: mypy src/maof
+      - name: Tests (coverage floor 85%)
+        run: pytest --cov=maof --cov-report=term --cov-fail-under=85
+      - name: Eval gate (sample dataset)
+        run: pytest -q tests/test_eval.py tests/test_po_demo.py::test_eval_gate
+
+  supply-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install (full dependency surface)
+        run: |
+          pip install --upgrade pip
+          pip install ".[all,dev]"
+          pip install pip-audit cyclonedx-bom
+      - name: Vulnerability audit (pip-audit)
+        run: pip-audit --skip-editable
+      - name: SBOM (CycloneDX)
+        run: cyclonedx-py environment --output-format JSON -o sbom.cdx.json
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.cdx.json
+
+  # Exercises the broker adapters against real brokers (the `live`-marked suite,
+  # deselected by the default offline run). Brokers come from docker-compose.test.yml.
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Start brokers
+        run: docker compose -f docker-compose.test.yml up -d --wait
+      - name: Install (all adapters)
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[all,dev]"
+      - name: Wait for SQS (ElasticMQ has no compose healthcheck)
+        run: |
+          for _ in $(seq 1 30); do
+            curl -sf "http://127.0.0.1:14566/?Action=ListQueues" >/dev/null 2>&1 && break
+            sleep 2
+          done
+      - name: Live broker integration tests
+        env:
+          MAOF_TEST_RABBITMQ_URL: amqp://guest:guest@127.0.0.1:5672/
+          MAOF_TEST_REDIS_URL: redis://127.0.0.1:16379/0
+          MAOF_TEST_KAFKA_URL: 127.0.0.1:19092
+          MAOF_TEST_SQS_URL: http://127.0.0.1:14566
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+        run: pytest -m live tests/test_rabbitmq.py tests/test_kafka.py tests/test_redis.py tests/test_sqs.py -q
+      - name: Broker logs (on failure)
+        if: failure()
+        run: docker compose -f docker-compose.test.yml logs --tail=200

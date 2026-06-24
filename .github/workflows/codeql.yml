@@ -1,0 +1,31 @@
+# CodeQL static analysis (SAST) for the Python sources.
+name: codeql
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 3 * * 1" # weekly, Monday 03:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    # Code scanning upload needs a public repo (or GitHub Advanced Security). Skip
+    # while user-owned + private; auto-runs once the repo is public.
+    if: ${{ github.event.repository.visibility == 'public' }}
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          queries: security-and-quality
+      - uses: github/codeql-action/analyze@v3

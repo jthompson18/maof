@@ -1,0 +1,57 @@
+# Live brokers for the integration tests (the `live`-marked suite). NOT the app
+# dev stack — that's docker-compose.yml. Brings up the four brokers the support
+# matrix covers so `pytest -m live` can exercise the real adapters.
+#
+#   docker compose -f docker-compose.test.yml up -d --wait
+#   export MAOF_TEST_RABBITMQ_URL=amqp://guest:guest@127.0.0.1:5672/
+#   export MAOF_TEST_REDIS_URL=redis://127.0.0.1:16379/0
+#   export MAOF_TEST_KAFKA_URL=127.0.0.1:19092
+#   export MAOF_TEST_SQS_URL=http://127.0.0.1:14566
+#   export AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test
+#   pytest -m live tests/test_rabbitmq.py tests/test_kafka.py tests/test_redis.py tests/test_sqs.py
+#   docker compose -f docker-compose.test.yml down -v
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports: ["5672:5672", "15672:15672"]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7
+    ports: ["16379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  kafka:
+    image: apache/kafka:3.8.0 # single-node KRaft, configured purely by env
+    ports: ["19092:19092"]
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:19092,CONTROLLER://0.0.0.0:19093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:19092
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:19093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:19092 --list || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+
+  sqs:
+    image: softwaremill/elasticmq-native:latest # SQS-compatible, no AWS account
+    ports: ["14566:9324"]

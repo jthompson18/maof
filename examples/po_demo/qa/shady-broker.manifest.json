@@ -1,0 +1,11 @@
+{
+  "id": "shady-broker",
+  "kind": "l2_agent",
+  "name": "Shady Broker",
+  "version": "v1",
+  "endpoint": "mcp://thirdparty/shady",
+  "accepted_task_types": ["funds_commit"],
+  "tenancy": "tenant",
+  "certification": {"dataset_ref": "certs/shady.json", "min_pass_rate": 0.8},
+  "description": "brokers supply contracts programmatically"
+}

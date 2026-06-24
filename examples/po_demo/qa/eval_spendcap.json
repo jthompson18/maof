@@ -1,0 +1,55 @@
+{
+  "name": "spend-cap-qa",
+  "cases": [
+    {
+      "id": "funded-commit",
+      "input": "The partner committed $250,000 against $250,000 of cleared client funds; disclosed_principal=true; commitment position written to the audit ledger.",
+      "reference": "Commitment fully covered by cleared funds with disclosed principal."
+    },
+    {
+      "id": "clamped-overask",
+      "input": "The purchasing lead requested $500,000 but committed spend was clamped to the $250,000 of cleared client funds before any vendor commitment was made.",
+      "reference": "Over-ask reduced to cleared funds; no exposure beyond client funding."
+    },
+    {
+      "id": "two-party-overcap",
+      "input": "A $400,000 commitment exceeded the partner spend cap; it proceeded only after buyer-finance and partner-ops both approved, with each resolution attributed.",
+      "reference": "Over-cap spend gated on two-party role-bound approval with attribution."
+    },
+    {
+      "id": "fail-closed",
+      "input": "An over-cap commitment with no approval gate wired was denied; nothing was published to vendor queues and the ledger stayed empty.",
+      "reference": "No gate means fail closed: deny, zero side effects."
+    },
+    {
+      "id": "exactly-once",
+      "input": "A redelivered funds_commit task was deduplicated by the idempotency guard; the vendor ledger shows exactly one commitment for the run.",
+      "reference": "Replay-safe: redelivery never double-commits spend."
+    },
+    {
+      "id": "catalog-quarantine",
+      "input": "A trafficking result whose order code violated the naming catalog was denied post-result and quarantined to the dead-letter queue; downstream actualization never consumed it.",
+      "reference": "Non-conformant vendor output never propagates."
+    },
+    {
+      "id": "overcommit-bad",
+      "input": "The partner committed $400,000 to the vendor while only $250,000 of client funds had cleared, with no clamp and no approval recorded.",
+      "reference": "VIOLATION: commitment exceeded cleared funds without governance."
+    },
+    {
+      "id": "undisclosed-bad",
+      "input": "A funds commitment was committed without asserting the disclosed principal, so the buyer-partner-vendor chain is not attributable.",
+      "reference": "VIOLATION: disclosed-principal posture missing from the commitment."
+    },
+    {
+      "id": "double-commit-bad",
+      "input": "After a worker crash the redelivered commitment was executed again, producing two ledger entries totalling double the approved spend.",
+      "reference": "VIOLATION: replay double-committed spend."
+    },
+    {
+      "id": "cancelled-clean",
+      "input": "An operator cancelled the run while it was waiting on reservation results; queued tasks were skipped before any side effect and the ledger stayed empty.",
+      "reference": "Cancellation stopped the run cleanly with zero side effects."
+    }
+  ]
+}

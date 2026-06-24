@@ -1,0 +1,1 @@
+"""MAOF worked examples."""

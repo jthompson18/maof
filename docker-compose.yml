@@ -1,0 +1,113 @@
+# MAOF dev stack. Brings up Postgres+pgvector, RabbitMQ, MinIO
+# (artifact store), runs migrations, then the orchestrator / worker / approval
+# services. Defaults run offline — no cloud creds needed (Ollama via host).
+name: maof
+
+x-maof-env: &maof-env
+  DB_URL: postgresql://maof:maof@postgres:5432/maof
+  BROKER_KIND: rabbitmq
+  BROKER_URL: amqp://guest:guest@rabbitmq:5672/
+  MSG_SIGNING_SECRET: change-me-in-prod
+  MSG_SIGNING_KEY_ID: default
+  EMBED_PROVIDER: hashing
+  ARTIFACT_BACKEND: s3
+  ARTIFACT_BUCKET: maof-artifacts
+  TENANCY_MODE: multi
+  REGION: us-east-1
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: maof
+      POSTGRES_PASSWORD: maof
+      POSTGRES_DB: maof
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U maof -d maof"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports: ["5672:5672", "15672:15672"]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: maof
+      MINIO_ROOT_PASSWORD: maofminio
+    ports: ["9000:9000", "9001:9001"]
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    build: {context: ., dockerfile: docker/worker.Dockerfile}
+    command: ["maof", "migrate"]
+    environment: *maof-env
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  orchestrator:
+    build: {context: ., dockerfile: docker/orchestrator.Dockerfile}
+    # Broker-connected reference entry: runs the signed po-cycle workflow —
+    # publishes signed tasks to the RabbitMQ vendor queues, and hosts the result
+    # collector + waker poller that resume the waiting run as results land.
+    command: ["python", "-m", "examples.po_demo.main_distributed"]
+    environment: *maof-env
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      rabbitmq: {condition: service_healthy}
+
+  worker-commitments:
+    build: {context: ., dockerfile: docker/worker.Dockerfile}
+    command:
+      [
+        "maof",
+        "run-worker",
+        "--queue",
+        "suppliers.commitments.v1",
+        "--consumers",
+        "examples/po_demo/consumers.yaml",
+        "--agents",
+        "examples.po_demo.register",
+      ]
+    environment: *maof-env
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      rabbitmq: {condition: service_healthy}
+
+  worker-fulfillment:
+    build: {context: ., dockerfile: docker/worker.Dockerfile}
+    command:
+      [
+        "maof",
+        "run-worker",
+        "--queue",
+        "suppliers.fulfillment.v1",
+        "--consumers",
+        "examples/po_demo/consumers.yaml",
+        "--agents",
+        "examples.po_demo.register",
+      ]
+    environment: *maof-env
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      rabbitmq: {condition: service_healthy}
+
+  approval:
+    build: {context: ., dockerfile: docker/approval.Dockerfile}
+    ports: ["8080:8080"]
+    environment: *maof-env
+    depends_on:
+      migrate: {condition: service_completed_successfully}
