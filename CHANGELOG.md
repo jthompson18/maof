@@ -5,6 +5,17 @@ All notable changes to MAOF are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-06-24
+
+### Security
+
+- Vulnerability reports route through GitHub's private advisory flow only; the maintainer email is no
+  longer published in `SECURITY.md` or package metadata.
+
+### Changed
+
+- Code scanning now uses GitHub's built-in default CodeQL setup (the in-repo CodeQL workflow was removed).
+
 ## [1.0.0] - 2026-06-24
 
 Initial public release of MAOF: the reusable orchestration and governance layer of a hierarchical
@@ -45,4 +56,5 @@ Initial public release of MAOF: the reusable orchestration and governance layer 
 - Core dependencies carry upper-version caps (`pydantic<3`, `httpx<1`, `jsonschema<5`, …) for
   reproducible installs.
 
+[1.0.1]: https://github.com/jthompson18/maof/releases/tag/v1.0.1
 [1.0.0]: https://github.com/jthompson18/maof/releases/tag/v1.0.0

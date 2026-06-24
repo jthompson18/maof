@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "maof"
-version = "1.0.0"
+version = "1.0.1"
 description = "Multi-Agent Orchestration Framework — the orchestration + governance layer of a hierarchical multi-agent system, shipping zero domain content."
 readme = "README.md"
 requires-python = ">=3.11"
